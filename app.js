@@ -1,0 +1,429 @@
+// ============================================================
+// KONFIGURATION - Diese Werte musst du anpassen!
+// ============================================================
+const CLIENT_ID = '1078609561258-454vce6k8jpolsk2arm6urdov4vlvjpu.apps.googleusercontent.com';
+const API_KEY   = 'AIzaSyATfZDrRagjUx3vL7oiQ7M7YbyIjPD1uAQ';
+// ============================================================
+
+const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
+const SCOPES = 'https://www.googleapis.com/auth/calendar';
+
+let tokenClient;
+let gapiInitialized = false;
+let gisInitialized  = false;
+let editingEventId  = null;
+let editingCalendarId = null;
+
+// eventId -> calendarId mapping
+const eventCalendarMap = {};
+
+// aktiver Kalender-Filter (null = alle)
+let activeCalendarFilter = null;
+
+// ------ Initialisierung ------
+
+function gapiLoaded() {
+  gapi.load('client', async () => {
+    await gapi.client.init({
+      apiKey: API_KEY,
+      discoveryDocs: [DISCOVERY_DOC],
+    });
+    gapiInitialized = true;
+    checkReady();
+  });
+}
+
+window.onload = () => {
+  const interval = setInterval(() => {
+    if (typeof google !== 'undefined' && google.accounts) {
+      clearInterval(interval);
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: (response) => {
+          if (response.error) {
+            console.error(response);
+            return;
+          }
+          onSignedIn();
+        },
+      });
+      gisInitialized = true;
+      checkReady();
+    }
+  }, 100);
+};
+
+function checkReady() {
+  if (gapiInitialized && gisInitialized) {
+    if (gapi.client.getToken()) {
+      onSignedIn();
+    }
+  }
+}
+
+// ------ Auth ------
+
+function handleLogin() {
+  if (!gapiInitialized || !gisInitialized) {
+    alert('Bitte warte kurz, die API wird noch geladen...');
+    return;
+  }
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+function handleLogout() {
+  const token = gapi.client.getToken();
+  if (token) {
+    google.accounts.oauth2.revoke(token.access_token);
+    gapi.client.setToken('');
+  }
+  document.getElementById('btn-login').style.display = 'block';
+  document.getElementById('btn-logout').style.display = 'none';
+  document.getElementById('controls').style.display = 'none';
+  document.getElementById('events-list').innerHTML = '';
+  document.getElementById('info-text').textContent = 'Bitte melde dich an, um deine Termine zu sehen.';
+  document.getElementById('info-text').style.display = 'block';
+}
+
+function onSignedIn() {
+  document.getElementById('btn-login').style.display = 'none';
+  document.getElementById('btn-logout').style.display = 'block';
+  document.getElementById('controls').style.display = 'block';
+  document.getElementById('info-text').style.display = 'none';
+  loadEvents();
+}
+
+// ------ Alle Kalender + Termine laden ------
+
+async function loadEvents() {
+  const list = document.getElementById('events-list');
+  list.innerHTML = '<li style="color:#666">Lade Kalender...</li>';
+
+  try {
+    // 1. Alle Kalender auflisten
+    const calResponse = await gapi.client.calendar.calendarList.list();
+const calendars = (calResponse.result.items || []).filter(cal => {
+      if (cal.accessRole === 'owner' || cal.accessRole === 'writer') return true;
+      const name = (cal.summary || '').toLowerCase();
+      const id   = (cal.id   || '').toLowerCase();
+      if (name.includes('feiertag')) return true;
+      if (name.includes('geburtstag') || id.includes('addressbook') || id.includes('contacts')) return true;
+      return false;
+    });
+
+    const now = new Date();
+    const inOneYear = new Date();
+    inOneYear.setFullYear(now.getFullYear() + 1);
+
+    // 2. Termine aus allen Kalendern laden (parallel)
+    const allEventsPromises = calendars.map(cal =>
+      gapi.client.calendar.events.list({
+        calendarId: cal.id,
+        timeMin: now.toISOString(),
+        timeMax: inOneYear.toISOString(),
+        showDeleted: false,
+        singleEvents: true,
+        maxResults: 100,
+        orderBy: 'startTime',
+      }).then(res => {
+        let events = res.result.items || [];
+        if (cal.primary) {
+          events = events.filter(e => e.eventType !== 'birthday');
+        }
+        return { calendar: cal, events };
+      }).catch(() => ({ calendar: cal, events: [] }))
+    );
+
+    const results = await Promise.all(allEventsPromises);
+
+    // Geburtstags-Events aus dem Primärkalender als eigenen virtuellen Kalender behandeln
+    const primaryResult = results.find(r => r.calendar.primary);
+    const birthdayCal = {
+      id: '__birthdays__',
+      summary: 'Geburtstage',
+      backgroundColor: '#16a765',
+    };
+    let birthdayEvents = [];
+    if (primaryResult) {
+      try {
+        const primaryResponse = await gapi.client.calendar.events.list({
+          calendarId: primaryResult.calendar.id,
+          timeMin: now.toISOString(),
+          timeMax: inOneYear.toISOString(),
+          showDeleted: false,
+          singleEvents: true,
+          maxResults: 100,
+          orderBy: 'startTime',
+        });
+        birthdayEvents = (primaryResponse.result.items || []).filter(e => e.eventType === 'birthday');
+      } catch (e) {
+        birthdayEvents = [];
+      }
+    }
+
+    // 3. Alle Termine zusammenführen und nach Datum sortieren
+    let allEvents = [];
+    results.forEach(({ calendar, events }) => {
+      events.forEach(event => {
+        eventCalendarMap[event.id] = calendar.id;
+        allEvents.push({ event, calendar });
+      });
+    });
+    birthdayEvents.forEach(event => {
+      eventCalendarMap[event.id] = birthdayCal.id;
+      allEvents.push({ event, calendar: birthdayCal });
+    });
+
+    allEvents.sort((a, b) => {
+      const dateA = new Date(a.event.start.dateTime || a.event.start.date);
+      const dateB = new Date(b.event.start.dateTime || b.event.start.date);
+      return dateA - dateB;
+    });
+
+    list.innerHTML = '';
+
+    if (allEvents.length === 0) {
+      list.innerHTML = '<li style="color:#666;text-align:center;margin-top:20px">Keine Termine gefunden.</li>';
+      return;
+    }
+
+    const calendarList = results.map(r => r.calendar);
+    if (birthdayEvents.length > 0) calendarList.push(birthdayCal);
+    renderCalendarButtons(calendarList);
+    allEvents.forEach(({ event, calendar }) => renderEvent(event, calendar));
+
+  } catch (err) {
+    list.innerHTML = `<li style="color:red">Fehler beim Laden: ${err.message}</li>`;
+    console.error(err);
+  }
+}
+
+function renderEvent(event, calendar) {
+  const list = document.getElementById('events-list');
+  const li = document.createElement('li');
+  li.className = 'event-item';
+  li.id = `event-${event.id}`;
+  li.dataset.calendarId = calendar.id;
+
+  const start = event.start.dateTime || event.start.date;
+  const end   = event.end.dateTime   || event.end.date;
+
+  const calColor = calendar.backgroundColor || '#1a73e8';
+  const calName  = calendar.primary ? 'Mein Kalender' : (calendar.summary || 'Kalender');
+
+  li.style.borderLeftColor = calColor;
+
+  li.innerHTML = `
+    <div class="event-info">
+      <span class="cal-label" style="background:${calColor}">${escapeHtml(calName)}</span>
+      <h3>${escapeHtml(event.summary || '(Kein Titel)')}</h3>
+      <p>${formatDateTime(start)} &ndash; ${formatDateTime(end)}</p>
+      ${event.description ? `<p style="margin-top:4px">${escapeHtml(event.description)}</p>` : ''}
+    </div>
+    <div class="event-actions">
+      <button class="btn-edit" onclick="openEditModal('${event.id}')">Bearbeiten</button>
+      <button class="btn-delete" onclick="deleteEvent('${event.id}')">Loschen</button>
+    </div>
+  `;
+  list.appendChild(li);
+}
+
+// ------ Kalender-Filter Sidebar ------
+
+function renderCalendarButtons(calendars) {
+  const sidebar = document.getElementById('sidebar');
+  document.getElementById('sidebar-placeholder').style.display = 'none';
+  sidebar.innerHTML = '';
+
+  const allBtn = document.createElement('button');
+  allBtn.className = 'cal-filter-btn active';
+  allBtn.textContent = 'Alle';
+  allBtn.dataset.calendarId = '';
+  allBtn.onclick = () => filterCalendar(null, allBtn);
+  sidebar.appendChild(allBtn);
+
+  calendars.forEach(cal => {
+    if ((cal.summary || '').toLowerCase() === 'kalenderwochen') return;
+    const color = cal.backgroundColor || '#1a73e8';
+    const btn = document.createElement('button');
+    btn.className = 'cal-filter-btn';
+    btn.textContent = cal.primary ? 'Mein Kalender' : (cal.summary || 'Kalender');
+    btn.dataset.calendarId = cal.id;
+    btn.style.borderLeftColor = color;
+    btn.style.setProperty('--cal-color', color);
+    btn.onclick = () => filterCalendar(cal.id, btn);
+    sidebar.appendChild(btn);
+  });
+}
+
+function filterCalendar(calendarId, clickedBtn) {
+  activeCalendarFilter = calendarId;
+
+  document.querySelectorAll('.cal-filter-btn').forEach(b => b.classList.remove('active'));
+  if (clickedBtn) clickedBtn.classList.add('active');
+
+  document.querySelectorAll('#events-list .event-item').forEach(li => {
+    if (!calendarId || li.dataset.calendarId === calendarId) {
+      li.style.display = '';
+    } else {
+      li.style.display = 'none';
+    }
+  });
+}
+
+// ------ Modal ------
+
+function openModal() {
+  editingEventId = null;
+  editingCalendarId = null;
+  document.getElementById('modal-title').textContent = 'Neuer Termin';
+  document.getElementById('input-title').value = '';
+  document.getElementById('input-desc').value = '';
+  document.getElementById('input-start').value = '';
+  document.getElementById('input-end').value = '';
+  document.getElementById('modal').classList.remove('hidden');
+}
+
+function openEditModal(eventId) {
+  const calendarId = eventCalendarMap[eventId] || 'primary';
+
+  gapi.client.calendar.events.get({
+    calendarId: calendarId,
+    eventId: eventId,
+  }).then(response => {
+    const event = response.result;
+    editingEventId = eventId;
+    editingCalendarId = calendarId;
+
+    document.getElementById('modal-title').textContent = 'Termin bearbeiten';
+    document.getElementById('input-title').value = event.summary || '';
+    document.getElementById('input-desc').value = event.description || '';
+    document.getElementById('input-start').value = toLocalDateTimeInput(event.start.dateTime || event.start.date);
+    document.getElementById('input-end').value   = toLocalDateTimeInput(event.end.dateTime   || event.end.date);
+    updateKW();
+    document.getElementById('modal').classList.remove('hidden');
+  }).catch(err => {
+    alert('Fehler beim Laden des Termins.');
+    console.error(err);
+  });
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+  editingEventId = null;
+  editingCalendarId = null;
+}
+
+// ------ Termin speichern ------
+
+async function saveEvent() {
+  const title = document.getElementById('input-title').value.trim();
+  const desc  = document.getElementById('input-desc').value.trim();
+  const start = document.getElementById('input-start').value;
+  const end   = document.getElementById('input-end').value;
+
+  if (!title || !start || !end) {
+    alert('Bitte Titel, Start und Ende ausfüllen.');
+    return;
+  }
+
+  if (new Date(start) >= new Date(end)) {
+    alert('Das Ende muss nach dem Start liegen.');
+    return;
+  }
+
+  const calendarId = editingCalendarId || 'primary';
+
+  const eventBody = {
+    summary: title,
+    description: desc,
+    start: { dateTime: new Date(start).toISOString() },
+    end:   { dateTime: new Date(end).toISOString() },
+  };
+
+  try {
+    if (editingEventId) {
+      await gapi.client.calendar.events.update({
+        calendarId: calendarId,
+        eventId: editingEventId,
+        resource: eventBody,
+      });
+    } else {
+      await gapi.client.calendar.events.insert({
+        calendarId: 'primary',
+        resource: eventBody,
+      });
+    }
+    closeModal();
+    loadEvents();
+  } catch (err) {
+    alert('Fehler beim Speichern: ' + err.message);
+    console.error(err);
+  }
+}
+
+// ------ Termin loschen ------
+
+async function deleteEvent(eventId) {
+  if (!confirm('Termin wirklich loschen?')) return;
+
+  const calendarId = eventCalendarMap[eventId] || 'primary';
+
+  try {
+    await gapi.client.calendar.events.delete({
+      calendarId: calendarId,
+      eventId: eventId,
+    });
+    const el = document.getElementById(`event-${eventId}`);
+    if (el) el.remove();
+  } catch (err) {
+    alert('Fehler beim Loschen: ' + err.message);
+    console.error(err);
+  }
+}
+
+// ------ Hilfsfunktionen ------
+
+function formatDateTime(dateString) {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (isNaN(d)) return dateString;
+  return d.toLocaleString('de-DE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function toLocalDateTimeInput(dateString) {
+  if (!dateString) return '';
+  const d = new Date(dateString);
+  if (isNaN(d)) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function getKW(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function updateKW() {
+  const val = document.getElementById('input-start').value;
+  const kwField = document.getElementById('input-kw');
+  if (!val) { kwField.value = ''; return; }
+  const d = new Date(val);
+  if (isNaN(d)) { kwField.value = ''; return; }
+  kwField.value = `KW ${getKW(d)} / ${d.getFullYear()}`;
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Google Kalender</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header>
+    <h1>Mein Google Kalender</h1>
+    <div id="auth-buttons">
+      <button id="btn-login" onclick="handleLogin()">Anmelden</button>
+      <button id="btn-logout" onclick="handleLogout()" style="display:none">Abmelden</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="controls" style="display:none">
+      <button onclick="openModal()">+ Neuer Termin</button>
+    </div>
+
+    <div id="layout">
+      <div id="sidebar">
+        <p id="sidebar-placeholder" style="color:#999;font-size:0.85rem">Bitte anmelden...</p>
+      </div>
+      <div id="events-container">
+        <p id="info-text">Bitte melde dich an, um deine Termine zu sehen.</p>
+        <ul id="events-list"></ul>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal: Termin erstellen / bearbeiten -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-content">
+      <h2 id="modal-title">Neuer Termin</h2>
+      <label>Titel
+        <input type="text" id="input-title" placeholder="Terminname" />
+      </label>
+      <label>Beschreibung
+        <textarea id="input-desc" placeholder="Optionale Beschreibung"></textarea>
+      </label>
+      <label>Start
+        <input type="datetime-local" id="input-start" oninput="updateKW()" />
+      </label>
+      <label>Kalenderwoche
+        <input type="text" id="input-kw" readonly placeholder="wird aus Startdatum berechnet" style="background:#f4f6f8;color:#555;cursor:default" />
+      </label>
+      <label>Ende
+        <input type="datetime-local" id="input-end" />
+      </label>
+      <div class="modal-buttons">
+        <button id="btn-save" onclick="saveEvent()">Speichern</button>
+        <button onclick="closeModal()">Abbrechen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Google API -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>
