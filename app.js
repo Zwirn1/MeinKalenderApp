@@ -20,6 +20,9 @@ const eventCalendarMap = {};
 // aktiver Kalender-Filter (null = alle)
 let activeCalendarFilter = null;
 
+// Kalender für Dropdown (nur owner/writer)
+let writableCalendars = [];
+
 // ------ Initialisierung ------
 
 function gapiLoaded() {
@@ -188,6 +191,7 @@ const calendars = (calResponse.result.items || []).filter(cal => {
       return;
     }
 
+    writableCalendars = results.map(r => r.calendar).filter(c => c.accessRole === 'owner' || c.accessRole === 'writer');
     const calendarList = results.map(r => r.calendar);
     if (birthdayEvents.length > 0) calendarList.push(birthdayCal);
     renderCalendarButtons(calendarList);
@@ -227,6 +231,20 @@ function renderEvent(event, calendar) {
     </div>
   `;
   list.appendChild(li);
+}
+
+// ------ Kalender-Dropdown befüllen ------
+
+function populateCalendarSelect(selectedId) {
+  const select = document.getElementById('input-calendar');
+  select.innerHTML = '';
+  writableCalendars.forEach(cal => {
+    const option = document.createElement('option');
+    option.value = cal.id;
+    option.textContent = cal.primary ? 'Mein Kalender' : (cal.summary || 'Kalender');
+    if (cal.id === selectedId || (!selectedId && cal.primary)) option.selected = true;
+    select.appendChild(option);
+  });
 }
 
 // ------ Kalender-Filter Sidebar ------
@@ -281,6 +299,9 @@ function openModal() {
   document.getElementById('input-desc').value = '';
   document.getElementById('input-start').value = '';
   document.getElementById('input-end').value = '';
+  document.getElementById('input-kw').value = '';
+  document.getElementById('label-calendar').style.display = '';
+  populateCalendarSelect(null);
   document.getElementById('modal').classList.remove('hidden');
 }
 
@@ -295,6 +316,7 @@ function openEditModal(eventId) {
     editingEventId = eventId;
     editingCalendarId = calendarId;
 
+    document.getElementById('label-calendar').style.display = 'none';
     document.getElementById('modal-title').textContent = 'Termin bearbeiten';
     document.getElementById('input-title').value = event.summary || '';
     document.getElementById('input-desc').value = event.description || '';
@@ -332,7 +354,7 @@ async function saveEvent() {
     return;
   }
 
-  const calendarId = editingCalendarId || 'primary';
+  const calendarId = editingCalendarId || document.getElementById('input-calendar').value || 'primary';
 
   const eventBody = {
     summary: title,
@@ -350,7 +372,7 @@ async function saveEvent() {
       });
     } else {
       await gapi.client.calendar.events.insert({
-        calendarId: 'primary',
+        calendarId: calendarId,
         resource: eventBody,
       });
     }

@@ -230,6 +230,7 @@ main {
 }
 
 .modal-content input,
+.modal-content select,
 .modal-content textarea {
   padding: 8px 10px;
   border: 1px solid #ccc;
