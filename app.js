@@ -233,7 +233,6 @@ function renderEvent(event, calendar) {
 
 function renderCalendarButtons(calendars) {
   const sidebar = document.getElementById('sidebar');
-  document.getElementById('sidebar-placeholder').style.display = 'none';
   sidebar.innerHTML = '';
 
   const allBtn = document.createElement('button');
