@@ -223,6 +223,7 @@ function renderEvent(event, calendar) {
       <span class="cal-label" style="background:${calColor}">${escapeHtml(calName)}</span>
       <h3>${escapeHtml(event.summary || '(Kein Titel)')}</h3>
       <p>${formatDateTime(start)} &ndash; ${formatDateTime(end)}</p>
+      ${event.location    ? `<p style="margin-top:4px">📍 ${escapeHtml(event.location)}</p>` : ''}
       ${event.description ? `<p style="margin-top:4px">${escapeHtml(event.description)}</p>` : ''}
     </div>
     <div class="event-actions">
@@ -296,6 +297,7 @@ function openModal() {
   editingCalendarId = null;
   document.getElementById('modal-title').textContent = 'Neuer Termin';
   document.getElementById('input-title').value = '';
+  document.getElementById('input-location').value = '';
   document.getElementById('input-desc').value = '';
   document.getElementById('input-start').value = '';
   document.getElementById('input-end').value = '';
@@ -319,6 +321,7 @@ function openEditModal(eventId) {
     document.getElementById('label-calendar').style.display = 'none';
     document.getElementById('modal-title').textContent = 'Termin bearbeiten';
     document.getElementById('input-title').value = event.summary || '';
+    document.getElementById('input-location').value = event.location || '';
     document.getElementById('input-desc').value = event.description || '';
     document.getElementById('input-start').value = toLocalDateTimeInput(event.start.dateTime || event.start.date);
     document.getElementById('input-end').value   = toLocalDateTimeInput(event.end.dateTime   || event.end.date);
@@ -339,8 +342,9 @@ function closeModal() {
 // ------ Termin speichern ------
 
 async function saveEvent() {
-  const title = document.getElementById('input-title').value.trim();
-  const desc  = document.getElementById('input-desc').value.trim();
+  const title    = document.getElementById('input-title').value.trim();
+  const location = document.getElementById('input-location').value.trim();
+  const desc     = document.getElementById('input-desc').value.trim();
   const start = document.getElementById('input-start').value;
   const end   = document.getElementById('input-end').value;
 
@@ -358,6 +362,7 @@ async function saveEvent() {
 
   const eventBody = {
     summary: title,
+    location: location || undefined,
     description: desc,
     start: { dateTime: new Date(start).toISOString() },
     end:   { dateTime: new Date(end).toISOString() },
