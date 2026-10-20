@@ -370,10 +370,17 @@ async function saveEvent() {
 
   try {
     if (editingEventId) {
-      await gapi.client.calendar.events.update({
+      // patch ändert nur die gesendeten Felder (Teilnehmer, Erinnerungen, Meet-Link usw. bleiben);
+      // location: '' leert das Feld, date: null entfernt den Ganztags-Wert beim Wechsel auf Uhrzeit
+      await gapi.client.calendar.events.patch({
         calendarId: calendarId,
         eventId: editingEventId,
-        resource: eventBody,
+        resource: {
+          ...eventBody,
+          location: location,
+          start: { ...eventBody.start, date: null },
+          end:   { ...eventBody.end,   date: null },
+        },
       });
     } else {
       await gapi.client.calendar.events.insert({
