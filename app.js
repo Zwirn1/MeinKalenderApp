@@ -70,7 +70,7 @@ function handleLogin() {
     alert('Bitte warte kurz, die API wird noch geladen...');
     return;
   }
-  tokenClient.requestAccessToken({ prompt: 'consent' });
+  tokenClient.requestAccessToken({ prompt: '' });
 }
 
 function handleLogout() {
