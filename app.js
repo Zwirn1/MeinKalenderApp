@@ -2,7 +2,6 @@
 // KONFIGURATION - Diese Werte musst du anpassen!
 // ============================================================
 const CLIENT_ID = '1078609561258-454vce6k8jpolsk2arm6urdov4vlvjpu.apps.googleusercontent.com';
-const API_KEY   = 'AIzaSyATfZDrRagjUx3vL7oiQ7M7YbyIjPD1uAQ';
 // ============================================================
 
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
@@ -28,7 +27,6 @@ let writableCalendars = [];
 function gapiLoaded() {
   gapi.load('client', async () => {
     await gapi.client.init({
-      apiKey: API_KEY,
       discoveryDocs: [DISCOVERY_DOC],
     });
     gapiInitialized = true;

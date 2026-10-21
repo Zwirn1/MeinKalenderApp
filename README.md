@@ -11,12 +11,10 @@ Bevor die App funktioniert, musst du einmalig eine Google Cloud Konfiguration er
 3. Im Menü: **APIs & Dienste** > **Bibliothek**
 4. Suche nach **Google Calendar API** und aktiviere sie
 
-### 2. API-Key erstellen
+### 2. OAuth 2.0 Client-ID erstellen
 
-1. **APIs & Dienste** > **Anmeldedaten** > **Anmeldedaten erstellen** > **API-Schlüssel**
-2. Den Schlüssel kopieren
+Einen API-Schlüssel braucht die App nicht (er wäre im Browser-Code öffentlich sichtbar).
 
-### 3. OAuth 2.0 Client-ID erstellen
 
 1. **Anmeldedaten erstellen** > **OAuth-Client-ID**
 2. Anwendungstyp: **Webanwendung**
@@ -24,15 +22,14 @@ Bevor die App funktioniert, musst du einmalig eine Google Cloud Konfiguration er
    - `http://localhost` (zum lokalen Testen)
 4. Client-ID kopieren
 
-### 4. Werte in app.js eintragen
+### 3. Client-ID in app.js eintragen
 
 Öffne `app.js` und ersetze:
 ```js
 const CLIENT_ID = 'DEINE_CLIENT_ID.apps.googleusercontent.com';
-const API_KEY   = 'DEIN_API_KEY';
 ```
 
-### 5. App starten
+### 4. App starten
 
 Die App muss über einen lokalen Webserver gestartet werden (nicht direkt als Datei öffnen).
 
