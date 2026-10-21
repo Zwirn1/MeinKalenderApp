@@ -6,6 +6,8 @@ const CLIENT_ID = '1078609561258-454vce6k8jpolsk2arm6urdov4vlvjpu.apps.googleuse
 
 const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
 const SCOPES = 'https://www.googleapis.com/auth/calendar';
+// im Browser gemerkte Konto-Adresse (steht nicht im Code, da das Repo öffentlich ist)
+const ACCOUNT_HINT_KEY = 'kalender.accountHint';
 
 let tokenClient;
 let gapiInitialized = false;
@@ -70,7 +72,8 @@ function handleLogin() {
     alert('Bitte warte kurz, die API wird noch geladen...');
     return;
   }
-  tokenClient.requestAccessToken({ prompt: '' });
+  // hint: gemerktes Konto vorwählen, dann entfällt die Kontoauswahl (leer = Google fragt nach)
+  tokenClient.requestAccessToken({ prompt: '', hint: localStorage.getItem(ACCOUNT_HINT_KEY) || '' });
 }
 
 function handleLogout() {
@@ -104,6 +107,9 @@ async function loadEvents() {
   try {
     // 1. Alle Kalender auflisten
     const calResponse = await gapi.client.calendar.calendarList.list();
+    // die ID des Hauptkalenders ist die Konto-Adresse: für die nächste Anmeldung merken
+    const primaryCal = (calResponse.result.items || []).find(cal => cal.primary);
+    if (primaryCal) localStorage.setItem(ACCOUNT_HINT_KEY, primaryCal.id);
 const calendars = (calResponse.result.items || []).filter(cal => {
       if (cal.accessRole === 'owner' || cal.accessRole === 'writer') return true;
       const name = (cal.summary || '').toLowerCase();
