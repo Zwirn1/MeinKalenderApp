@@ -346,3 +346,31 @@ main {
     font-size: 1rem;
   }
 }
+
+/* Musik-Ansicht */
+#music-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.music-kind-btn {
+  border: none;
+  padding: 6px 14px;
+  border-radius: 16px;
+  background: white;
+  color: #333;
+  cursor: pointer;
+  font-size: 0.85rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+
+.music-kind-btn:hover {
+  background: #fff3e0;
+}
+
+.music-kind-btn.active {
+  background: #e8710a;
+  color: white;
+}

@@ -18,8 +18,30 @@ let editingCalendarId = null;
 // eventId -> calendarId mapping
 const eventCalendarMap = {};
 
-// aktiver Kalender-Filter (null = alle)
+// aktiver Kalender-Filter (null = alle, MUSIC_FILTER = Musik-Ansicht)
 let activeCalendarFilter = null;
+// Unterfilter in der Musik-Ansicht (null = alle Musik-Termine)
+let activeMusicKind = null;
+
+// ------ Musik-Termine (erkannt am Anfang des Titels) ------
+
+const MUSIC_FILTER = '__music__';
+// Reihenfolge ist wichtig: 'ev.Pr.' muss vor 'Pr.' geprüft werden
+const MUSIC_KINDS = [
+  { kind: 'probe-ev', label: 'Probe (offen)', color: '#fdd663', pattern: /^ev\.?\s*pr\./i },
+  { kind: 'probe',    label: 'Probe',         color: '#f9ab00', pattern: /^pr\./i },
+  { kind: 'gig',      label: 'Gig',           color: '#e8710a', pattern: /^gigs?\b/i },
+];
+
+function musicKind(summary) {
+  const title = (summary || '').trim();
+  const found = MUSIC_KINDS.find(k => k.pattern.test(title));
+  return found ? found.kind : null;
+}
+
+function musicInfo(kind) {
+  return MUSIC_KINDS.find(k => k.kind === kind);
+}
 
 // Kalender für Dropdown (nur owner/writer)
 let writableCalendars = [];
@@ -205,8 +227,13 @@ const calendars = (calResponse.result.items || []).filter(cal => {
     writableCalendars = results.map(r => r.calendar).filter(c => c.accessRole === 'owner' || c.accessRole === 'writer');
     const calendarList = results.map(r => r.calendar);
     if (birthdayEvents.length > 0) calendarList.push(birthdayCal);
-    renderCalendarButtons(calendarList);
+    const hasMusic = allEvents.some(({ event }) => musicKind(event.summary));
+    activeCalendarFilter = null;
+    activeMusicKind = null;
+    renderCalendarButtons(calendarList, hasMusic);
+    renderMusicFilter();
     allEvents.forEach(({ event, calendar }) => renderEvent(event, calendar));
+    applyFilters();
 
   } catch (err) {
     list.innerHTML = `<li style="color:red">Fehler beim Laden: ${err.message}</li>`;
@@ -224,14 +251,19 @@ function renderEvent(event, calendar) {
   const start = event.start.dateTime || event.start.date;
   const end   = event.end.dateTime   || event.end.date;
 
-  const calColor = calendar.backgroundColor || '#1a73e8';
+  const music = musicInfo(musicKind(event.summary));
+  // Musik-Termine bekommen eine eigene Farbe (nur in dieser App, in Google ändert sich nichts)
+  const calColor = music ? music.color : (calendar.backgroundColor || '#1a73e8');
   const calName  = calendar.primary ? 'Mein Kalender' : (calendar.summary || 'Kalender');
+  const labelText = music ? `${calName} · ${music.label}` : calName;
+  const labelColor = music ? '#202124' : 'white';
 
   li.style.borderLeftColor = calColor;
+  if (music) li.dataset.music = music.kind;
 
   li.innerHTML = `
     <div class="event-info">
-      <span class="cal-label" style="background:${calColor}">${escapeHtml(calName)}</span>
+      <span class="cal-label" style="background:${calColor};color:${labelColor}">${escapeHtml(labelText)}</span>
       <h3>${escapeHtml(event.summary || '(Kein Titel)')}</h3>
       <p>${formatDateTime(start)} &ndash; ${formatDateTime(end)}</p>
       ${event.location    ? `<p style="margin-top:4px">📍 ${escapeHtml(event.location)}</p>` : ''}
@@ -261,7 +293,7 @@ function populateCalendarSelect(selectedId) {
 
 // ------ Kalender-Filter Sidebar ------
 
-function renderCalendarButtons(calendars) {
+function renderCalendarButtons(calendars, hasMusic) {
   const sidebar = document.getElementById('sidebar');
   sidebar.innerHTML = '';
 
@@ -271,6 +303,17 @@ function renderCalendarButtons(calendars) {
   allBtn.dataset.calendarId = '';
   allBtn.onclick = () => filterCalendar(null, allBtn);
   sidebar.appendChild(allBtn);
+
+  if (hasMusic) {
+    const musicBtn = document.createElement('button');
+    musicBtn.className = 'cal-filter-btn';
+    musicBtn.textContent = '🎵 Musik';
+    musicBtn.dataset.calendarId = MUSIC_FILTER;
+    musicBtn.style.borderLeftColor = '#e8710a';
+    musicBtn.style.setProperty('--cal-color', '#e8710a');
+    musicBtn.onclick = () => filterCalendar(MUSIC_FILTER, musicBtn);
+    sidebar.appendChild(musicBtn);
+  }
 
   calendars.forEach(cal => {
     if ((cal.summary || '').toLowerCase() === 'kalenderwochen') return;
@@ -292,12 +335,43 @@ function filterCalendar(calendarId, clickedBtn) {
   document.querySelectorAll('.cal-filter-btn').forEach(b => b.classList.remove('active'));
   if (clickedBtn) clickedBtn.classList.add('active');
 
+  activeMusicKind = null;
+  renderMusicFilter();
+  applyFilters();
+}
+
+function applyFilters() {
+  const musicView = activeCalendarFilter === MUSIC_FILTER;
   document.querySelectorAll('#events-list .event-item').forEach(li => {
-    if (!calendarId || li.dataset.calendarId === calendarId) {
-      li.style.display = '';
+    let show;
+    if (musicView) {
+      show = !!li.dataset.music && (!activeMusicKind || li.dataset.music === activeMusicKind);
     } else {
-      li.style.display = 'none';
+      show = !activeCalendarFilter || li.dataset.calendarId === activeCalendarFilter;
     }
+    li.style.display = show ? '' : 'none';
+  });
+  document.getElementById('music-filter').style.display = musicView ? '' : 'none';
+}
+
+// Unterfilter der Musik-Ansicht: Alle / Proben / offene Proben / Gigs, mit Anzahl
+function renderMusicFilter() {
+  const bar = document.getElementById('music-filter');
+  bar.innerHTML = '';
+  const items = [{ kind: null, label: 'Alle' }, ...MUSIC_KINDS];
+  items.forEach(({ kind, label }) => {
+    const count = document.querySelectorAll(
+      kind ? `#events-list .event-item[data-music="${kind}"]` : '#events-list .event-item[data-music]'
+    ).length;
+    const btn = document.createElement('button');
+    btn.className = 'music-kind-btn' + (kind === activeMusicKind ? ' active' : '');
+    btn.textContent = `${label} (${count})`;
+    btn.onclick = () => {
+      activeMusicKind = kind;
+      renderMusicFilter();
+      applyFilters();
+    };
+    bar.appendChild(btn);
   });
 }
 
