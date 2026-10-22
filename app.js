@@ -26,7 +26,11 @@ let writableCalendars = [];
 
 // ------ Initialisierung ------
 
+let gapiStarted = false;
+
 function gapiLoaded() {
+  if (gapiStarted) return;
+  gapiStarted = true;
   gapi.load('client', async () => {
     await gapi.client.init({
       discoveryDocs: [DISCOVERY_DOC],
@@ -38,8 +42,9 @@ function gapiLoaded() {
 
 window.onload = () => {
   const interval = setInterval(() => {
-    if (typeof google !== 'undefined' && google.accounts) {
-      clearInterval(interval);
+    // api.js wird async geladen und kann vor oder nach app.js fertig sein: hier selbst starten
+    if (!gapiStarted && typeof gapi !== 'undefined' && gapi.load) gapiLoaded();
+    if (!gisInitialized && typeof google !== 'undefined' && google.accounts) {
       tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
@@ -54,6 +59,8 @@ window.onload = () => {
       gisInitialized = true;
       checkReady();
     }
+    // erst aufhören, wenn beide Google-Bibliotheken gestartet sind
+    if (gapiStarted && gisInitialized) clearInterval(interval);
   }, 100);
 };
 
