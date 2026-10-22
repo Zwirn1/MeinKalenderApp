@@ -177,7 +177,7 @@ const calendars = (calResponse.result.items || []).filter(cal => {
         timeMax: inOneYear.toISOString(),
         showDeleted: false,
         singleEvents: true,
-        maxResults: 100,
+        maxResults: 250,
         orderBy: 'startTime',
       }).then(res => {
         let events = res.result.items || [];
@@ -206,7 +206,7 @@ const calendars = (calResponse.result.items || []).filter(cal => {
           timeMax: inOneYear.toISOString(),
           showDeleted: false,
           singleEvents: true,
-          maxResults: 100,
+          maxResults: 250,
           orderBy: 'startTime',
         });
         birthdayEvents = (primaryResponse.result.items || []).filter(e => e.eventType === 'birthday');
@@ -383,6 +383,8 @@ function renderMusicFilter() {
     const count = document.querySelectorAll(
       kind ? `#events-list .event-item[data-music="${kind}"]` : '#events-list .event-item[data-music]'
     ).length;
+    // Bandkalender nur zeigen, wenn es solche Termine gibt
+    if (kind === 'band' && count === 0) return;
     const btn = document.createElement('button');
     btn.className = 'music-kind-btn' + (kind === activeMusicKind ? ' active' : '');
     btn.textContent = `${label} (${count})`;
