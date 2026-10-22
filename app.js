@@ -28,15 +28,31 @@ let activeMusicKind = null;
 const MUSIC_FILTER = '__music__';
 // Reihenfolge ist wichtig: 'ev.Pr.' muss vor 'Pr.' geprüft werden
 const MUSIC_KINDS = [
-  { kind: 'probe-ev', label: 'Probe (offen)', color: '#fdd663', pattern: /^ev\.?\s*pr\./i },
-  { kind: 'probe',    label: 'Probe',         color: '#f9ab00', pattern: /^pr\./i },
-  { kind: 'gig',      label: 'Gig',           color: '#e8710a', pattern: /^gigs?\b/i },
+  { kind: 'probe-ev', label: 'Probe (offen)', color: '#fdd663', text: '#202124', pattern: /^ev\.?\s*pr\./i },
+  { kind: 'probe',    label: 'Probe',         color: '#f9ab00', text: '#202124', pattern: /^pr\./i },
+  { kind: 'gig',      label: 'Gig',           color: '#d80404', text: 'white', pattern: /^gigs?\b/i },
+  { kind: 'band',     label: 'Bandkalender',  color: '#ef6c00', text: 'white', pattern: null },
 ];
 
-function musicKind(summary) {
+// Kalender (z. B. von anderen Bands importiert), deren Termine alle zur Musik zählen (Teil des Namens)
+const MUSIC_CALENDAR_NAMES = ['funkhouser'];
+
+function isMusicCalendar(calendar) {
+  const name = ((calendar && calendar.summary) || '').toLowerCase();
+  return MUSIC_CALENDAR_NAMES.some(n => name.includes(n));
+}
+
+// Art zuerst am Titelanfang (Pr./ev.Pr./Gig), in Musik-Kalendern auch am Stichwort, sonst 'band'
+function musicKind(summary, calendar) {
   const title = (summary || '').trim();
-  const found = MUSIC_KINDS.find(k => k.pattern.test(title));
-  return found ? found.kind : null;
+  const found = MUSIC_KINDS.find(k => k.pattern && k.pattern.test(title));
+  if (found) return found.kind;
+  if (!isMusicCalendar(calendar)) return null;
+  // In Musik-Kalendern genügt das Stichwort irgendwo im Titel ("Probe" vor "Gig/Konzert",
+  // damit z. B. "Konzertprobe" als Probe zählt)
+  if (/probe/i.test(title)) return 'probe';
+  if (/gig|konzert/i.test(title)) return 'gig';
+  return 'band';
 }
 
 function musicInfo(kind) {
@@ -143,6 +159,7 @@ const calendars = (calResponse.result.items || []).filter(cal => {
       if (cal.accessRole === 'owner' || cal.accessRole === 'writer') return true;
       const name = (cal.summary || '').toLowerCase();
       const id   = (cal.id   || '').toLowerCase();
+      if (isMusicCalendar(cal)) return true;
       if (name.includes('feiertag')) return true;
       if (name.includes('geburtstag') || id.includes('addressbook') || id.includes('contacts')) return true;
       return false;
@@ -227,7 +244,7 @@ const calendars = (calResponse.result.items || []).filter(cal => {
     writableCalendars = results.map(r => r.calendar).filter(c => c.accessRole === 'owner' || c.accessRole === 'writer');
     const calendarList = results.map(r => r.calendar);
     if (birthdayEvents.length > 0) calendarList.push(birthdayCal);
-    const hasMusic = allEvents.some(({ event }) => musicKind(event.summary));
+    const hasMusic = allEvents.some(({ event, calendar }) => musicKind(event.summary, calendar));
     activeCalendarFilter = null;
     activeMusicKind = null;
     renderCalendarButtons(calendarList, hasMusic);
@@ -251,12 +268,15 @@ function renderEvent(event, calendar) {
   const start = event.start.dateTime || event.start.date;
   const end   = event.end.dateTime   || event.end.date;
 
-  const music = musicInfo(musicKind(event.summary));
+  const music = musicInfo(musicKind(event.summary, calendar));
   // Musik-Termine bekommen eine eigene Farbe (nur in dieser App, in Google ändert sich nichts)
   const calColor = music ? music.color : (calendar.backgroundColor || '#1a73e8');
   const calName  = calendar.primary ? 'Mein Kalender' : (calendar.summary || 'Kalender');
-  const labelText = music ? `${calName} · ${music.label}` : calName;
-  const labelColor = music ? '#202124' : 'white';
+  // Termine aus einem Musik-Kalender zeigen nur den Kalendernamen, sonst 'Kalender · Art'
+  const labelText = music && music.kind !== 'band' ? `${calName} · ${music.label}` : calName;
+  // Importierte/geteilte Kalender mit nur Leserechten lassen sich nicht bearbeiten
+  const readOnly = calendar.accessRole === 'reader' || calendar.accessRole === 'freeBusyReader';
+  const labelColor = music ? music.text : 'white';
 
   li.style.borderLeftColor = calColor;
   if (music) li.dataset.music = music.kind;
@@ -270,8 +290,8 @@ function renderEvent(event, calendar) {
       ${event.description ? `<p style="margin-top:4px">${escapeHtml(event.description)}</p>` : ''}
     </div>
     <div class="event-actions">
-      <button class="btn-edit" onclick="openEditModal('${event.id}')">Bearbeiten</button>
-      <button class="btn-delete" onclick="deleteEvent('${event.id}')">Loschen</button>
+      ${readOnly ? '' : `<button class="btn-edit" onclick="openEditModal('${event.id}')">Bearbeiten</button>
+      <button class="btn-delete" onclick="deleteEvent('${event.id}')">Loschen</button>`}
     </div>
   `;
   list.appendChild(li);
